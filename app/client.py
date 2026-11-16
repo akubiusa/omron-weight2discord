@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -29,6 +30,8 @@ OGSC_SDK_VERSION = "000.005"
 USER_AGENT = f"OmronConnect/{OGSC_APP_VERSION}.001 CFNetwork/1335.0.3.4 Darwin/21.6.0)"
 
 APP_URL = f"{SERVER}/apps/{APP_ID}/server-code"
+
+logger = logging.getLogger(__name__)
 
 DEVICE_CATEGORY_BPM = "0"
 DEVICE_CATEGORY_SCALE = "1"
@@ -195,7 +198,15 @@ class OmronConnectV1:
             returned = r.json().get("returnedValue")
             if isinstance(returned, list):
                 returned = returned[0] if returned else None
-            if not returned or "errorCode" in returned:
+            if not returned:
+                break
+            if "errorCode" in returned:
+                # errorCode が障害か「該当データなし」かは未確認のため、例外にせず警告のみ残す。
+                logger.warning(
+                    "measureData returned errorCode=%r (fetched %d records before this response)",
+                    str(returned["errorCode"])[:64],
+                    len(results),
+                )
                 break
 
             page_had_data = False
