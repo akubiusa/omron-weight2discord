@@ -81,7 +81,7 @@ class RunSyncOutboxTest(unittest.TestCase):
             with self._run(data_dir, fresh=True), mock.patch(
                 "app.discord_notify.requests.post", side_effect=failure
             ):
-                with self.assertRaises(type(failure) if isinstance(failure, Exception) else Exception):
+                with self.assertRaises(sync.discord_notify.DiscordNotificationError):
                     sync.run_sync(data_dir)
 
             self.assertEqual(len(csv_store.load_existing(data_dir / "weight_data.csv")), 1)
@@ -111,11 +111,19 @@ class RunSyncOutboxTest(unittest.TestCase):
     def test_http_500_response_raises_http_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
+            webhook = "https://discord.example/api/webhooks/secret-id/secret-token"
+            response = _response(500)
+            response.url = webhook
             with self._run(data_dir, fresh=True), mock.patch(
-                "app.discord_notify.requests.post", return_value=_response(500)
+                "app.discord_notify.requests.post", return_value=response
             ):
-                with self.assertRaises(requests.HTTPError):
+                with self.assertRaises(sync.discord_notify.DiscordNotificationError) as raised:
                     sync.run_sync(data_dir)
+            self.assertEqual(str(raised.exception), "Discord webhook request failed with HTTP 500.")
+            self.assertNotIn(webhook, str(raised.exception))
+            self.assertIsNone(raised.exception.__cause__)
+            self.assertIsNone(raised.exception.__context__)
+            self.assertFalse(hasattr(raised.exception, "response"))
             self.assertEqual(len(json.loads((data_dir / "outbox.json").read_text(encoding="utf-8"))["pending"]), 1)
 
     def test_no_outbox_without_webhook(self):

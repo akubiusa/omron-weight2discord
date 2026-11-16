@@ -9,6 +9,11 @@ import requests
 MAX_SHOWN_RECORDS = 3
 COLOR = 0x3AA0FF
 
+
+class DiscordNotificationError(RuntimeError):
+    """Discord webhook request failed without exposing request details."""
+
+
 # (行のキー, 表示ラベル, 単位)
 METRIC_SPECS: list[tuple[str, str, str]] = [
     ("bmi", "BMI", ""),
@@ -69,8 +74,20 @@ def build_payload(new_rows: list[dict[str, Any]]) -> dict[str, Any]:
 def send_payload(webhook_url: str, payload: dict[str, Any]) -> None:
     """webhook ペイロード (embeds と任意の content) を Discord へ POST する。"""
 
-    r = requests.post(webhook_url, json=payload, timeout=10)
-    r.raise_for_status()
+    failure = None
+    try:
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        response.raise_for_status()
+    except requests.RequestException as error:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+        if isinstance(status, int):
+            message = f"Discord webhook request failed with HTTP {status}."
+        else:
+            message = "Discord webhook request failed."
+        failure = DiscordNotificationError(message)
+
+    if failure is not None:
+        raise failure
 
 
 def notify_new_records(webhook_url: str, new_rows: list[dict[str, Any]]) -> None:
